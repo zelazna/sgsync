@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 )
+
+const SSH_PORT int64 = 22
 
 func initAws() *ec2.EC2 {
 	sess, err := session.NewSession(&aws.Config{Region: aws.String("eu-west-2"), Endpoint: aws.String("https://fcu.eu-west-2.outscale.com")})
@@ -21,15 +24,23 @@ func initAws() *ec2.EC2 {
 	return ec2.New(sess)
 }
 
-func syncSgIps(myIp string, aws *ec2.EC2, sgIds []string) {
-	for _, sg := range getSecurityGroups(sgIds, aws) {
-		for _, perm := range sg.IpPermissions {
-			// TODO: filter in query
-			if *perm.FromPort == SSHPort && *perm.ToPort == SSHPort {
-				if !inIpRanges(myIp, perm.IpRanges) {
-					go authorizeSg(aws, *sg.GroupId, myIp)
-				}
-			}
+func syncSgIps(myIp string, svc *ec2.EC2, sgIds []string) {
+	var wg sync.WaitGroup
+	for _, sg := range getSecurityGroups(sgIds, svc) {
+		wg.Add(1)
+		go doSync(svc, sg, myIp, &wg)
+	}
+	wg.Wait()
+}
+
+func doSync(svc *ec2.EC2, sg *ec2.SecurityGroup, ip string, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	for _, perm := range sg.IpPermissions {
+		// TODO: filter in query ( seems not working with outscale api )
+		if inPortRange(perm, SSH_PORT, SSH_PORT) && !inIpRanges(ip, perm.IpRanges) {
+			fmt.Printf("Syncing %s\n", *sg.GroupId)
+			authorizeSg(svc, *sg.GroupId, ip)
 		}
 	}
 }
@@ -52,7 +63,7 @@ func authorizeSg(svc *ec2.EC2, sgId string, ip string) {
 		},
 	}
 
-	result, err := svc.AuthorizeSecurityGroupIngress(input)
+	_, err := svc.AuthorizeSecurityGroupIngress(input)
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			switch aerr.Code() {
@@ -66,8 +77,6 @@ func authorizeSg(svc *ec2.EC2, sgId string, ip string) {
 		}
 		return
 	}
-
-	fmt.Println(result)
 }
 
 func getSecurityGroups(groupIds []string, svc *ec2.EC2) []*ec2.SecurityGroup {
@@ -97,6 +106,10 @@ func inIpRanges(ip string, ipRanges []*ec2.IpRange) bool {
 		}
 	}
 	return false
+}
+
+func inPortRange(perm *ec2.IpPermission, start int64, end int64) bool {
+	return *perm.FromPort >= start && *perm.ToPort <= end
 }
 
 func Errorf(msg string, args ...interface{}) {

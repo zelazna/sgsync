@@ -10,14 +10,12 @@ import (
 
 type Config struct {
 	SgIds []string `json:"ids"`
-	Interval int `json:"interval"`
 }
 
 type IpifyResponse struct {
 	Ip string `json:"ip"`
 }
 
-const SSHPort int64 = 22
 const IPApi string = "https://api.ipify.org?format=json"
 const DefaultConfigFile string = "~/.sgsync/config.json"
 
@@ -35,10 +33,7 @@ func main() {
 	svc := initAws()
 
 	// TODO: run a daemon
-	if newIp := getMyIp(); newIp != myIp {
-		syncSgIps(newIp, svc, sgIds)
-		myIp = newIp
-	}
+	syncSgIps(myIp, svc, sgIds)
 }
 
 func getMyIp() string {
