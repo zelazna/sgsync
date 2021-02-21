@@ -10,9 +10,16 @@ sgsync config template:
 
 ```json
 {
-    "ids": [
-        "sg-1b3add6c"
+    "sgs": [
+        {
+            "id": "sg-a4f4264a",
+            "port": 22,
+            "comment": "for testing purposes"
+        }
     ],
-    "interval": 10
+    "extra": { 
+        "endpoint": "endpoint",
+        "region": "eu-west-2"
+    }
 }
 ```

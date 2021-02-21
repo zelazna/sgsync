@@ -9,13 +9,19 @@ import (
 )
 
 type Sg struct {
-	Id   string `json:"id"`
-	Port int64  `json:"port"`
+	Id      string `json:"id"`
+	Port    int64  `json:"port"`
 	Comment string `json:"comment"`
 }
 
+type Extra struct {
+	Endpoint string `json:"endpoint"`
+	Region   string `json:"region"`
+}
+
 type Config struct {
-	Sgs []Sg `json:"sgs"`
+	Sgs   []Sg  `json:"sgs"`
+	Extra Extra `json:"extra"`
 }
 
 type IpifyResponse struct {
@@ -34,12 +40,12 @@ func main() {
 		configFile = DefaultConfigFile
 	}
 
-	sgs := initApp(configFile)
+	config := initApp(configFile)
 	myIp := getMyIp()
-	svc := initAws()
+	svc := initAws(&config.Extra)
 
 	// TODO: run a daemon
-	syncSgIps(myIp, svc, sgs)
+	syncSgIps(myIp, svc, config.Sgs)
 }
 
 func getMyIp() string {
@@ -55,7 +61,7 @@ func getMyIp() string {
 	return ipifyResp.Ip
 }
 
-func initApp(configFile string) []Sg {
+func initApp(configFile string) Config {
 	jsonFile, err := os.Open(configFile)
 
 	if err != nil {
@@ -66,9 +72,9 @@ func initApp(configFile string) []Sg {
 	// defer the closing of our jsonFile so that we can parse it later on
 	defer jsonFile.Close()
 
-	var ids Config
+	var conf Config
 
 	byteValue, _ := ioutil.ReadAll(jsonFile)
-	json.Unmarshal(byteValue, &ids)
-	return ids.Sgs
+	json.Unmarshal(byteValue, &conf)
+	return conf
 }

@@ -17,11 +17,19 @@ type SgModel struct {
 	SGRequirement Sg
 }
 
-func initAws() *ec2.EC2 {
-	sess, err := session.NewSession(&aws.Config{Region: aws.String("eu-west-2"), Endpoint: aws.String("https://fcu.eu-west-2.outscale.com")})
+func initAws(config *Extra) *ec2.EC2 {
+	var conf aws.Config
+
+	if config == nil {
+		conf = aws.Config{Region: aws.String("eu-west-2")}
+	} else {
+		conf = aws.Config{Region: &config.Region, Endpoint: &config.Endpoint}
+	}
+
+	sess, err := session.NewSession(&conf)
 
 	if err != nil {
-		fmt.Println(err)
+		Errorf("%s.", err)
 	}
 
 	return ec2.New(sess)
@@ -29,23 +37,23 @@ func initAws() *ec2.EC2 {
 
 func syncSgIps(myIp string, svc *ec2.EC2, sgs []Sg) {
 	var wg sync.WaitGroup
+	// TODO count number of updated sgs
 	for _, sg := range getSecurityGroups(sgs, svc) {
 		wg.Add(1)
-		go doSync(svc, sg, myIp, &wg)
+
+		go func(svc *ec2.EC2, sg SgModel, ip string, wg *sync.WaitGroup) {
+			defer wg.Done()
+
+			for _, perm := range sg.IpPermissions {
+				// TODO: filter in query ( seems not working with outscale api )
+				if inPortRange(perm, sg.SGRequirement.Port, sg.SGRequirement.Port) && !inIpRanges(ip, perm.IpRanges) {
+					fmt.Printf("Syncing %s\n", *sg.GroupId)
+					authorizeSg(svc, sg, ip)
+				}
+			}
+		}(svc, sg, myIp, &wg)
 	}
 	wg.Wait()
-}
-
-func doSync(svc *ec2.EC2, sg SgModel, ip string, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	for _, perm := range sg.IpPermissions {
-		// TODO: filter in query ( seems not working with outscale api )
-		if inPortRange(perm, sg.SGRequirement.Port, sg.SGRequirement.Port) && !inIpRanges(ip, perm.IpRanges) {
-			fmt.Printf("Syncing %s\n", *sg.GroupId)
-			authorizeSg(svc, sg, ip)
-		}
-	}
 }
 
 func authorizeSg(svc *ec2.EC2, sg SgModel, ip string) {
@@ -105,6 +113,7 @@ func getSecurityGroups(sgs []Sg, svc *ec2.EC2) []SgModel {
 		Errorf("Unable to get descriptions for security groups, %v", err)
 	}
 
+	fmt.Printf("Found %d security groups, syncing...\n", len(result.SecurityGroups))
 	return mapSgtoData(result.SecurityGroups, sgs)
 }
 
@@ -138,4 +147,5 @@ func mapSgtoData(awsSgs []*ec2.SecurityGroup, sgs []Sg) []SgModel {
 
 func Errorf(msg string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, msg+"\n", args...)
+	os.Exit(1)
 }
