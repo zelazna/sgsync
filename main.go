@@ -8,8 +8,14 @@ import (
 	"os"
 )
 
+type Sg struct {
+	Id   string `json:"id"`
+	Port int64  `json:"port"`
+	Comment string `json:"comment"`
+}
+
 type Config struct {
-	SgIds []string `json:"ids"`
+	Sgs []Sg `json:"sgs"`
 }
 
 type IpifyResponse struct {
@@ -28,12 +34,12 @@ func main() {
 		configFile = DefaultConfigFile
 	}
 
-	sgIds := initApp(configFile)
+	sgs := initApp(configFile)
 	myIp := getMyIp()
 	svc := initAws()
 
 	// TODO: run a daemon
-	syncSgIps(myIp, svc, sgIds)
+	syncSgIps(myIp, svc, sgs)
 }
 
 func getMyIp() string {
@@ -49,7 +55,7 @@ func getMyIp() string {
 	return ipifyResp.Ip
 }
 
-func initApp(configFile string) []string {
+func initApp(configFile string) []Sg {
 	jsonFile, err := os.Open(configFile)
 
 	if err != nil {
@@ -64,5 +70,5 @@ func initApp(configFile string) []string {
 
 	byteValue, _ := ioutil.ReadAll(jsonFile)
 	json.Unmarshal(byteValue, &ids)
-	return ids.SgIds
+	return ids.Sgs
 }
